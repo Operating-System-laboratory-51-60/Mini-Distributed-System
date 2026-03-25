@@ -35,10 +35,13 @@ int calculate_load()
     return (busy_seconds * 100) / 120;
 }
 
-int main()
+int main(int argc, char *argv[])
 {
-    int sock;
-    struct sockaddr_in serv_addr;
+    if(argc != 2)
+    {
+        printf("Usage: %s <server_ip>\n", argv[0]);
+        exit(1);
+    }
 
     // STEP 1: CREATE THE SOCKET
     sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -56,9 +59,9 @@ int main()
     // We use 127.0.0.1 (localhost) to connect to the server running on our own laptop.
     // inet_pton converts the string "127.0.0.1" into binary network format.
 
-    if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0)
+    if(inet_pton(AF_INET, argv[1], &serv_addr.sin_addr) <= 0)
     {
-        perror("Invalid address / Address not supported");
+        perror("Invalid address %s / Address not supported.\n", argv[1]);
         exit(1);
     }
 

@@ -94,7 +94,7 @@ int main()
 
     fd_set readfds; // The receptionist's checklist of phones to watch
 
-    printf("Waiting for workers to connec...\n");
+    printf("Waiting for workers to connect...\n");
 
     while(1)
     {
