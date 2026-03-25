@@ -1,5 +1,40 @@
 #include "common.h"
 
+#define HISTORY_SIZE 20 // store last 20 task records
+
+typedef struct
+{
+    time_t start_time; // When did this task start?
+    int duration; // How many seconds did it run?
+} TaskRecord;
+
+TaskRecord history[HISTORY_SIZE];
+int history_count = 0;
+
+// Calculates real load based on last 2 minutes
+int calculate_load()
+{
+    time_t now = time(NULL);
+    int busy_seconds = 0;
+    time_t window_start = now - 120; // 2 minutes ago
+
+    for(int i=0;i<history_count;i++)
+    {
+        time_t task_end = history[i].start_time + history[i].duration;
+
+        // Only count tasks that overlapped with our 2-minute window
+        if(task_end > window_start)
+        {
+            time_t overlap_start = history[i].start_time > window_start ? history[i].start_time : window_start;
+            time_t overlap_end = task_end < now ? task_end : now;
+            busy_seconds += (int)(overlap_end - overlap_start);
+        }
+    }
+    // cap at 100% and calculate percentage
+    if(busy_seconds > 120) busy_seconds = 120;
+    return (busy_seconds * 100) / 120;
+}
+
 int main()
 {
     int sock;
@@ -88,31 +123,37 @@ int main()
             }
             if(msg.type == MSG_TASK_ASSIGN)
             {
+                time_t task_start = time(NULL);
                 printf("Task received! Simultaing work for %d seconds...\n", msg.task_arg);
-                fake_load = 80; // Load spikes when working!
-                sleep(msg.task_arg); // Simulate actual work
-                fake_load = 10; // Back to normal after work
+                sleep(msg.task_arg); // simulate work
 
-                // Send result back to server
-                Message result;
-                memset(&result, 0, sizeof(Message));
-                result.type = MSG_TASK_RESULT;
-                result.task_id = msg.task_id;
-                result.task_result = msg.task_arg*2; // Dummy result
-                send(sock, &result, sizeof(Message), 0);
-                printf("Task done! Sent result back to server.\n");
+                //save history
+                if(history_count < HISTORY_SIZE)
+                {
+                    history[history_count].start_time = task_start;
+                    history[history_count].duration = msg.task_arg;
+                    history_count++;
+                }
             }
+
+            Message result;
+            memset(&result, 0, sizeof(Message));
+            result.type = MSG_TASK_RESULT;
+            result.task_id = msg.task_id;
+            result.task_result = msg.task_arg*2; // Dummy result
+            send(sock, &result, sizeof(Message), 0);
+            printf("Task done! Sent result back to the server.\n");
         }
         else
         {
             // Timeout fired - send load update
-            fake_load = (fake_load + 10) % 90;
+            int real_load = calculate_load();
             Message update;
             memset(&update, 0, sizeof(Message));
             update.type = MSG_LOAD_UPDATE;
-            update.load_percent = fake_load;
+            update.load_percent = real_load;
             send(sock, &update, sizeof(Message), 0);
-            printf("Sent load update: %d%%.\n",fake_load);
+            printf("Sent load update: %d%%.\n",real_load);
         }
     }
    
