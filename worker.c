@@ -44,16 +44,17 @@ int main(int argc, char *argv[])
     }
 
     // STEP 1: CREATE THE SOCKET
-    sock = socket(AF_INET, SOCK_STREAM, 0);
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
     if(sock < 0)
     {
         perror("Socket creation failed");
         exit(1);
     }
-
+    struct sockaddr_in serv_addr;
+    memset(&serv_addr, 0, sizeof(serv_addr));
     // STEP 2: SET THE DESTINATION
     serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(PORT); // DIal port 8080
+    serv_addr.sin_port = htons(PORT); // Dial port 8080
 
     // inet_pton = "Internet Pointer-to-Network"
     // We use 127.0.0.1 (localhost) to connect to the server running on our own laptop.
@@ -61,7 +62,7 @@ int main(int argc, char *argv[])
 
     if(inet_pton(AF_INET, argv[1], &serv_addr.sin_addr) <= 0)
     {
-        perror("Invalid address %s / Address not supported.\n", argv[1]);
+        printf("Invalid address %s / Address not supported.\n", argv[1]);
         exit(1);
     }
 
