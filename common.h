@@ -27,7 +27,8 @@ typedef enum {
 // Task types (The Generic Payload)
 typedef enum {
     TASK_SLEEP,
-    TASK_MATH     
+    TASK_MATH,
+    TASK_EXEC    // New: execute a real shell command on the worker
 } TaskType;
 // Generic Message Structure sent over the network wire
 typedef struct {
@@ -38,8 +39,12 @@ typedef struct {
     // Task payload
     TaskType task_type;
     int task_id;
-    int task_arg;       // e.g., sleep duration length
-    int task_result;    // Computed answer returned to server
+    int task_arg;           // e.g., sleep duration length
+    int task_result;        // Computed int answer returned to server
+
+    // Remote execution payload
+    char command[256];      // Shell command to run on the worker
+    char output[1024];      // Worker's stdout result sent back
 } Message;
 
 #endif

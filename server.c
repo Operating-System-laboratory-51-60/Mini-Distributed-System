@@ -174,6 +174,31 @@ int main()
                         duration, idx, worker_loads[idx]);
                 }
             }
+            else if(strncmp(command, "exec ", 5) == 0)
+            {
+                // Everything after "exec " is the shell command
+                char *shell_cmd = command + 5;
+                // Remove the trailing newline from fgets
+                shell_cmd[strcspn(shell_cmd, "\n")] = 0;
+
+                int idx = find_availabe_worker(client_sockets, worker_loads);
+                if(idx == -1) printf("No workers conncted.\n");
+                else
+                {
+                    Message task;
+                    memset(&task, 0, sizeof(Message));
+                    task.type = MSG_TASK_ASSIGN;
+                    task.task_type = TASK_EXEC;
+                    task.task_id = rand() % 1000;
+                    strncpy(task.command, shell_cmd, sizeof(task.command) - 1);
+                    send(client_sockets[idx], &task, sizeof(Message), 0);
+
+                    active_tasks[idx] = task;
+                    has_task[idx] = 1;
+                    printf("Dispatched command \"%s\" to Worker [%d]\n", shell_cmd, idx);
+                }
+
+            }
         }
         // ==========================================
         // PHASE 3: RECEIVING DATA FROM WORKERS
@@ -237,6 +262,9 @@ int main()
                         // worker completer its task and sent us the answer!
                         printf("=== TASK COMPLETE ===\n");
                         printf("Worker [%d] finished task #%d. Result = %d.\n",i, msg.task_id,msg.task_result);
+
+                        if(strlen(msg.output) > 0) printf("--- Output ---\n%s\n ------------\n", msg.output);
+                        else printf("Result = %d\n", msg.task_result);
                         has_task[i] = 0; // Mark worker as idle
                         memset(&active_tasks[i], 0, sizeof(Message)); // Clear the task
                     }

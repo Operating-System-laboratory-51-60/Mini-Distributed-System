@@ -127,26 +127,55 @@ int main(int argc, char *argv[])
             }
             if(msg.type == MSG_TASK_ASSIGN)
             {
-                time_t task_start = time(NULL);
-                printf("Task received! Simultaing work for %d seconds...\n", msg.task_arg);
-                sleep(msg.task_arg); // simulate work
-
-                //save history
-                if(history_count < HISTORY_SIZE)
+                if(msg.task_type == TASK_SLEEP)
                 {
-                    history[history_count].start_time = task_start;
-                    history[history_count].duration = msg.task_arg;
-                    history_count++;
+                    time_t task_start = time(NULL);
+                    printf("SLEEP task: working for %d seconds...\n", msg.task_arg);
+                    sleep(msg.task_arg); // Simulate work
+
+                    // Save to load history
+                    if(history_count < HISTORY_SIZE)
+                    {
+                        history[history_count].start_time = task_start;
+                        history[history_count].duration = msg.task_arg;
+                        history_count++;
+                    }
+
+                    // Send result back
+                    Message result;
+                    memset(&result, 0, sizeof(Message));
+                    result.type = MSG_TASK_RESULT;
+                    result.task_id = msg.task_id;
+                    result.task_result = msg.task_arg * 2;
+                    send(sock, &result, sizeof(Message), 0);
+                    printf("Task done! Sent result back to the server.\n");
+                }
+                else if(msg.task_type == TASK_EXEC)
+                {
+                    printf("EXEC task: running \"%s\"\n", msg.command);
+
+                    FILE *fp = popen(msg.command, "r");
+
+                    Message result;
+                    memset(&result, 0, sizeof(Message));
+                    result.type = MSG_TASK_RESULT;
+                    result.task_id = msg.task_id;
+
+                    if(fp == NULL)
+                    {
+                        snprintf(result.output, sizeof(result.output),
+                                 "ERROR: Could not run command: %s", msg.command);
+                    }
+                    else
+                    {
+                        fread(result.output, 1, sizeof(result.output) - 1, fp);
+                        pclose(fp);
+                    }
+
+                    send(sock, &result, sizeof(Message), 0);
+                    printf("EXEC done! Output sent to server.\n");
                 }
             }
-
-            Message result;
-            memset(&result, 0, sizeof(Message));
-            result.type = MSG_TASK_RESULT;
-            result.task_id = msg.task_id;
-            result.task_result = msg.task_arg*2; // Dummy result
-            send(sock, &result, sizeof(Message), 0);
-            printf("Task done! Sent result back to the server.\n");
         }
         else
         {
