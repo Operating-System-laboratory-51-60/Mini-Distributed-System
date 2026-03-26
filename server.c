@@ -2,13 +2,13 @@
 
 
 // Finds the first worker with load < 50%, returns its index or -1 if none
-int find_availabe_worker(int *client_sockets,int *worker_loads)
+int find_availabe_worker(int *client_sockets,int *worker_loads,int *has_task)
 {
     int min_load = 100, min_idx = -1;
     for(int i=0;i<MAX_WORKERS;i++)
     {
         // Only consider connected workers (slot not empty)
-        if(client_sockets[i] > 0)
+        if(client_sockets[i] > 0 && has_task[i] == 0)
         {
             // If any worker is under 50%, return immediately
             if(worker_loads[i] < 50)
@@ -154,7 +154,7 @@ int main()
             if(sscanf(command, "task %d", &duration) == 1)
             {
                 // Find the best worker
-                int idx = find_availabe_worker(client_sockets, worker_loads);
+                int idx = find_availabe_worker(client_sockets, worker_loads, has_task);
                 if(idx == -1) printf("No workers connected!\n");
                 else
                 {
@@ -181,7 +181,7 @@ int main()
                 // Remove the trailing newline from fgets
                 shell_cmd[strcspn(shell_cmd, "\n")] = 0;
 
-                int idx = find_availabe_worker(client_sockets, worker_loads);
+                int idx = find_availabe_worker(client_sockets, worker_loads, has_task);
                 if(idx == -1) printf("No workers conncted.\n");
                 else
                 {
@@ -232,7 +232,7 @@ int main()
                     {
                         printf("Worker [%d] had an active task! Attempting to reassign...\n",i);
                         has_task[i] = 0;
-                        int new_idx = find_availabe_worker(client_sockets, worker_loads);
+                        int new_idx = find_availabe_worker(client_sockets, worker_loads, has_task);
                         if(new_idx == -1)
                         {
                             printf("NO WORKERS AVAILABLE! Task #%d is lost. Shutting down.\n",active_tasks[i].task_id);
