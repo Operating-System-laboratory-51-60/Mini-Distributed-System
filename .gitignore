@@ -1,0 +1,19 @@
+# Compiled executables
+server
+worker
+demo
+
+# Temporary compiled binary (created by 'run' command)
+/tmp/task_compiled
+
+# Object files
+*.o
+*.out
+*.a
+
+# Editor & OS clutter
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
