@@ -728,12 +728,33 @@ void mesh_main_handle_peer_message(int peer_sock, Message *msg) {
         }
 
         case MSG_TASK_RESULT:
-            // Handle task result (if we're the source)
-            log_event("TASK_RESULT", "Result for task %d received from %s:%d",
-                     msg->task_id, msg->source_ip, msg->source_port);
-            // Store result in queue
-            result_queue_enqueue(msg->task_id, msg->command, msg->output, 0, 1);
-            printf("📨 Result received for task %d:\n%s\n", msg->task_id, msg->output);
+            // Check if we are the originating source of this task
+            if (strcmp(msg->source_ip, my_ip) == 0 && msg->source_port == my_port) {
+                log_event("TASK_RESULT", "Result for task %d received natively. Task Complete.", msg->task_id);
+                // Store result in local queue
+                result_queue_enqueue(msg->task_id, msg->command, msg->output, 0, 1);
+                printf("\n📨 [RESULT] Task %d completed successfully!\n%s\n", msg->task_id, msg->output);
+            } else {
+                // We are NOT the source, we just executed it. Route the result back to the TRUE source!
+                log_event("TASK_RESULT", "Routing result for task %d back to source %s:%d",
+                          msg->task_id, msg->source_ip, msg->source_port);
+                
+                int source_idx = peer_manager_find_peer_index(msg->source_ip, msg->source_port);
+                if (source_idx >= 0) {
+                    int source_sock = peer_manager_get_peer_socket(source_idx);
+                    if (source_sock > 0) {
+                        send(source_sock, msg, sizeof(Message), 0);
+                        printf("🔄 Routed task %d result back to source %s:%d\n", 
+                               msg->task_id, msg->source_ip, msg->source_port);
+                    } else {
+                        log_warning("MESH_MAIN", "Cannot route result: source socket disconnected!");
+                        log_orphaned_result(msg->task_id, msg->output, msg->source_ip, msg->source_port);
+                    }
+                } else {
+                    log_warning("MESH_MAIN", "Cannot route result: source peer not found in peer list!");
+                    log_orphaned_result(msg->task_id, msg->output, msg->source_ip, msg->source_port);
+                }
+            }
             break;
 
         default:
