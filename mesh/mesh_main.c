@@ -263,10 +263,12 @@ int main(int argc, char *argv[]) {
                 if (bytes_read > 0) {
                     // Got data - identify and add the peer using real IP:port from message
                     int peer_idx = peer_manager_find_peer_index(msg.source_ip, msg.source_port);
+                    int was_new = 0;
                     if (peer_idx < 0) {
                         // New peer - add them
                         peer_manager_add_peer(msg.source_ip, msg.source_port);
                         peer_idx = peer_manager_find_peer_index(msg.source_ip, msg.source_port);
+                        was_new = 1;
                     }
                     if (peer_idx >= 0) {
                         worker_state.peers[peer_idx].socket_fd = pending_sockets[i];
@@ -275,6 +277,12 @@ int main(int argc, char *argv[]) {
                     }
                     // Process the message
                     mesh_main_handle_peer_message(pending_sockets[i], &msg);
+                    
+                    // Gossip this direct connection to the rest of the network!
+                    if (was_new && msg.type == MSG_PEER_JOIN) {
+                        mesh_main_broadcast_message(&msg);
+                    }
+                    
                     // Remove from pending
                     pending_count--;
                     pending_sockets[i] = pending_sockets[pending_count];
@@ -634,9 +642,17 @@ void mesh_main_handle_peer_message(int peer_sock, Message *msg) {
                                           msg->load_percent, msg->queue_depth);
             break;
 
-        case MSG_PEER_JOIN:
+        case MSG_PEER_JOIN: {
+            int is_new = (peer_manager_find_peer_index(msg->source_ip, msg->source_port) < 0);
             mesh_monitor_handle_peer_join(msg->source_ip, msg->source_port);
+            
+            // Peer Gossiping: if this is a newly discovered peer, broadcast their existence to everyone else
+            // This builds a full mesh automatically from a single connection!
+            if (is_new) {
+                mesh_main_broadcast_message(msg);
+            }
             break;
+        }
 
         case MSG_TASK_ASSIGN: {
             // Handle incoming task assignment from peer
