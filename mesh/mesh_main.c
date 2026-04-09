@@ -308,6 +308,12 @@ int main(int argc, char *argv[]) {
                         mesh_main_broadcast_message(&msg);
                     }
                     
+                    // If this was a local child process dropping off a result, 
+                    // no one else is tracking this socket, so we MUST close it!
+                    if (is_child_process) {
+                        close(pending_sockets[i]);
+                    }
+                    
                     // Remove from pending
                     pending_count--;
                     pending_sockets[i] = pending_sockets[pending_count];
@@ -540,8 +546,11 @@ void mesh_main_process_user_command(char *command) {
                     }
                     printf("✅ Task submitted. Main loop continues accepting commands.\n");
                 } else {
-                    printf("❌ Cannot execute task - max concurrent tasks reached (%d/%d)\n",
+                    printf("⚠️ Local max capacity reached (%d/%d). Adding to queue...\n", 
                            worker_state.child_count, MAX_CONCURRENT_TASKS);
+                    if (task_queue_enqueue(&task) < 0) {
+                        printf("❌ System completely overwhelmed. Task rejected.\n");
+                    }
                 }
             }
         }
@@ -580,11 +589,13 @@ void mesh_main_process_user_command(char *command) {
                 printf("▶️  Executing command: %s (Task ID: %d, async)\n", cmd, task.task_id);
                 printf("✅ Task submitted. Main loop continues accepting commands.\n");
             } else {
-                printf("❌ Cannot execute task - max concurrent tasks reached (%d/%d)\n",
+                printf("⚠️ Local max capacity reached (%d/%d). Adding to queue...\n", 
                        worker_state.child_count, MAX_CONCURRENT_TASKS);
+                if (task_queue_enqueue(&task) < 0) {
+                    printf("❌ System completely overwhelmed. Task rejected.\n");
+                }
             }
         }
-
     } else if (strcmp(command, "results") == 0) {
         // Display results queue
         if (result_queue_is_empty()) {
@@ -632,8 +643,11 @@ void mesh_main_process_user_command(char *command) {
                     printf("▶️  Executing sleep task %d: %d seconds (async)\n", task.task_id, sleep_seconds);
                     printf("✅ Task submitted. Main loop continues accepting commands.\n");
                 } else {
-                    printf("❌ Cannot execute task - max concurrent tasks reached (%d/%d)\n",
+                    printf("⚠️ Local max capacity reached (%d/%d). Adding to queue...\n", 
                            worker_state.child_count, MAX_CONCURRENT_TASKS);
+                    if (task_queue_enqueue(&task) < 0) {
+                        printf("❌ System completely overwhelmed. Task rejected.\n");
+                    }
                 }
             }
         }

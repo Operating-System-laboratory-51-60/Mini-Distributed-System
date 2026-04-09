@@ -118,6 +118,13 @@ int process_manager_execute_task(Task *task) {
     if (pid == 0) {
         // Child process
         signal(SIGCHLD, SIG_DFL);  // Let pclose wait for its own children normally
+        
+        // Scrub all inherited file descriptors (0=stdin, 1=stdout, 2=stderr)
+        // This prevents the child from holding open inherited network sockets!
+        for (int fd = 3; fd < 1024; fd++) {
+            close(fd);
+        }
+
         process_manager_child_execute(task);
         exit(0); // Child should not return
     } else {
@@ -362,39 +369,23 @@ void process_manager_send_result(Task *task, const char *result) {
         result_msg.output[sizeof(result_msg.output) - 1] = '\0';
     }
 
-    // If this task came from a peer (different IP OR different port), send result back
-    if (strcmp(task->source_ip, worker_state.my_ip) != 0 || task->source_port != worker_state.my_port) {
-        // Find the peer and send result
-        int peer_idx = peer_manager_find_peer_index(task->source_ip, task->source_port);
-        if (peer_idx >= 0 && worker_state.peers[peer_idx].socket_fd != -1) {
-            if (send_all(worker_state.peers[peer_idx].socket_fd, &result_msg, sizeof(result_msg)) > 0) {
-                log_event("RESULT_SENT", "Task %d result sent to %s:%d",
-                         task->task_id, task->source_ip, task->source_port);
-            } else {
-                log_error("PROCESS_MANAGER", "Failed to send result to peer", "");
-            }
-        } else {
-            // Peer not available, log as orphaned result
-            log_orphaned_result(task->task_id, result, task->source_ip, task->source_port);
-        }
-    } else {
-        // Local task
-        log_event("LOCAL_RESULT", "Task %d completed: %s", task->task_id, result);
+    // Connect to parent process to deliver the result
+    int local_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (local_sock >= 0) {
+        struct sockaddr_in serv_addr;
+        memset(&serv_addr, 0, sizeof(serv_addr));
+        serv_addr.sin_family = AF_INET;
+        serv_addr.sin_port = htons(worker_state.my_port);
         
-        // Connect to parent process (listening on worker_state.my_port) to deliver the result
-        int local_sock = socket(AF_INET, SOCK_STREAM, 0);
-        if (local_sock >= 0) {
-            struct sockaddr_in serv_addr;
-            memset(&serv_addr, 0, sizeof(serv_addr));
-            serv_addr.sin_family = AF_INET;
-            serv_addr.sin_port = htons(worker_state.my_port);
-            inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr);
-            
-            if (connect(local_sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) == 0) {
-                send_all(local_sock, &result_msg, sizeof(result_msg));
-            }
-            close(local_sock);
+        // Use my_ip instead of 127.0.0.1 to match exactly what the server is bound to
+        inet_pton(AF_INET, worker_state.my_ip, &serv_addr.sin_addr);
+        
+        if (connect(local_sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) == 0) {
+            send_all(local_sock, &result_msg, sizeof(result_msg));
+        } else {
+            log_error("PROCESS_MANAGER", "Child failed to loopback result to parent", strerror(errno));
         }
+        close(local_sock);
     }
 }
 
