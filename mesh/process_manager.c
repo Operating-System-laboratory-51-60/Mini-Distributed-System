@@ -196,7 +196,10 @@ void process_manager_execute_shell_command(const char *command, char *output, si
         return;
     }
 
-    FILE *fp = popen(command, "r");
+    char safe_command[1024];
+    snprintf(safe_command, sizeof(safe_command), "%s 2>&1", command);
+
+    FILE *fp = popen(safe_command, "r");
     if (fp) {
         size_t total_read = 0;
         size_t remaining = output_size - 1; // Leave space for null terminator
