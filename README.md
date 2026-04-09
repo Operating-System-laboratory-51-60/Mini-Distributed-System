@@ -150,6 +150,13 @@ Alternatively, list known peers in `peers.conf` (one entry per line) — they ar
 192.168.1.12:8080
 ```
 
+### Networking Ports
+The mesh uses two distinct ports simultaneously:
+- **TCP Port 8080** for guaranteed peer-to-peer data transfer (tasks, results, loads).
+- **UDP Port 8081** exclusively for LAN discovery broadcasts.
+*Separating these transports ensures heavy task transfers never block new peers from discovering the mesh.*
+
+
 ---
 
 ## 🎛️ Command Reference
@@ -246,7 +253,7 @@ This project is a **comprehensive showcase of core Operating Systems concepts** 
 |---|---|---|
 | Process creation | `fork()` | `process_manager.c` — spawns a child process per task |
 | Child reaping | `waitpid(WNOHANG)` | `process_manager.c` — non-blocking SIGCHLD handler prevents zombies |
-| Program execution | `execvp()` / `execlp()` / `popen()` | Child process runs shell commands or sleep tasks |
+| Program execution | `popen()` / `pclose()` | Child process runs shell commands or sleep tasks |
 | Process ID lookup | `getpid()` | Tracking active child PIDs in `child_pids[]` array |
 | Clean exit | `exit(0)` | Child exits after task completion |
 
@@ -345,15 +352,15 @@ setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 ### 7. File I/O & Logging
 
 - `fopen()` / `fprintf()` / `fflush()` / `fclose()` — writing to `events.log` and `orphaned_results.log`
-- `tmpfile()` / `mkstemp()` — temporary storage for binary task payloads
+- `snprintf()` + `fopen()` — generating dynamic paths (e.g. `/tmp/mesh_incoming_%d.c`) for temporary task payloads
 - `fread()` / `fwrite()` — reading and writing binary files
-- `unlink()` — deleting temp files after task execution
+- `remove()` — deleting temp files after task execution
 
 ---
 
 ### 8. Inter-Process Communication (IPC)
 
-Tasks results travel from child → parent via a **loopback TCP socket** on `127.0.0.1`:
+Tasks results travel from child → parent via a **loopback TCP socket using `worker_state.my_ip`** (strictly matching the address the server is bound to):
 - Child connects to parent's listening socket on the mesh port
 - Sends `MSG_TASK_RESULT` message with output
 - Parent's `select()` loop picks it up just like any other peer message
@@ -380,14 +387,14 @@ Used in `process_manager.c` to measure and report task execution time in millise
 
 | OS Topic | Concept Applied |
 |---|---|
-| **Process Management** | `fork()`, `waitpid()`, `exit()`, `execvp()` |
+| **Process Management** | `fork()`, `waitpid()`, `exit()`, `popen()` |
 | **I/O Multiplexing** | `select()`, `fd_set`, `FD_SET/ISSET/ZERO` |
 | **Socket Programming** | TCP server/client, UDP broadcast, `bind/listen/accept/connect` |
 | **Signal Handling** | `SIGCHLD` for zombie prevention, `SIGPIPE` suppression |
 | **File Descriptors** | Non-blocking I/O via `fcntl(O_NONBLOCK)`, FD scrubbing post-`fork()` |
 | **Socket Options** | `SO_REUSEADDR`, `SO_BROADCAST`, `SO_RCVTIMEO` |
-| **File I/O** | Log files, binary temp files, `fread/fwrite` |
-| **IPC** | Loopback TCP socket for child→parent result routing |
+| **File I/O** | Log files, binary temp files, `snprintf`, `remove`, `fread/fwrite` |
+| **IPC** | TCP loopback to `worker_state.my_ip` for child→parent result routing |
 | **Timing** | `gettimeofday()` for execution time measurement |
 | **Concurrency** | Multi-process with `fork()`, single-thread event loop with `select()` |
 
