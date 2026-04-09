@@ -297,6 +297,7 @@ int main(int argc, char *argv[]) {
                             worker_state.peers[peer_idx].socket_fd = pending_sockets[i];
                             worker_state.peers[peer_idx].is_alive = 1;
                             worker_state.peers[peer_idx].last_heartbeat = time(NULL);
+                            worker_state.peers[peer_idx].retry_count = 0;
                         }
                     }
 

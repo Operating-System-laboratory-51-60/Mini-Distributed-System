@@ -50,8 +50,8 @@ void mesh_monitor_update() {
         last_discovery_broadcast = now;
     }
 
-    // Retry failed peer connections every 6 seconds
-    if (difftime(now, last_reconnect_attempt) >= 6.0) {
+    // Retry failed peer connections every 30 seconds (rate-limited to avoid blocking)
+    if (difftime(now, last_reconnect_attempt) >= 30.0) {
         mesh_monitor_retry_failed_connections();
         last_reconnect_attempt = now;
     }
@@ -152,6 +152,7 @@ void mesh_monitor_handle_load_update(const char *peer_ip, int peer_port, int loa
         // Mark peer as alive if it wasn't
         if (!worker_state.peers[peer_idx].is_alive) {
             worker_state.peers[peer_idx].is_alive = 1;
+            worker_state.peers[peer_idx].retry_count = 0; // Reset retries on reconnect
             log_peer_event("PEER_ALIVE", peer_ip, peer_port);
         }
     }
@@ -162,15 +163,31 @@ void mesh_monitor_handle_peer_join(const char *peer_ip, int peer_port) {
     peer_manager_handle_peer_join(peer_ip, peer_port);
 }
 
-// Retry connections to dead peers
+// Retry connections to dead peers (rate-limited: 1 peer per cycle, max 3 retries)
 void mesh_monitor_retry_failed_connections() {
     for (int i = 0; i < worker_state.peer_count; i++) {
         PeerInfo *peer = &worker_state.peers[i];
 
         // If peer is dead or disconnected, try to reconnect
         if (!peer->is_alive || peer->socket_fd == -1) {
-            log_event("MESH_MONITOR", "Retrying connection to %s:%d", peer->ip, peer->port);
+            // Give up after 3 failed retries — remove the peer slot entirely
+            if (peer->retry_count >= 3) {
+                log_event("MESH_MONITOR", "Giving up on %s:%d after 3 retries, removing peer", peer->ip, peer->port);
+                // Shift remaining peers down
+                for (int j = i; j < worker_state.peer_count - 1; j++) {
+                    worker_state.peers[j] = worker_state.peers[j + 1];
+                }
+                worker_state.peer_count--;
+                i--; // Re-check this index
+                continue;
+            }
+
+            log_event("MESH_MONITOR", "Retrying connection to %s:%d (attempt %d/3)", peer->ip, peer->port, peer->retry_count + 1);
             peer_manager_connect_to_peer(peer->ip, peer->port);
+            peer->retry_count++;
+
+            // CRITICAL: Only attempt ONE reconnect per cycle to avoid blocking the event loop
+            return;
         }
     }
 }

@@ -88,6 +88,7 @@ typedef struct {
     int is_alive;            // 1=connected, 0=dead
     int queue_depth;         // How many tasks queued locally
     time_t last_heartbeat;   // For detecting dead peers
+    int retry_count;         // Number of failed reconnection attempts
 } PeerInfo;
 
 // Result queue for storing completed task results
