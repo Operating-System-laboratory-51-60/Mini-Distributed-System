@@ -35,6 +35,10 @@ int main(int argc, char *argv[]) {
     // Parse command line arguments
     int opt;
     int test_mode = 0;
+    // Buffer for command-line peers so they survive initialization reset
+    struct { char ip[64]; int port; } cmd_peers[10];
+    int cmd_peer_count = 0;
+
     while ((opt = getopt(argc, argv, "i:p:P:ht")) != -1) {
         switch (opt) {
             case 'i':
@@ -46,12 +50,12 @@ int main(int argc, char *argv[]) {
             case 'P': {
                 // Parse peer IP:PORT
                 char *colon = strchr(optarg, ':');
-                if (colon) {
+                if (colon && cmd_peer_count < 10) {
                     *colon = '\0';
-                    char *peer_ip = optarg;
-                    int peer_port = atoi(colon + 1);
-                    peer_manager_add_peer(peer_ip, peer_port);
-                } else {
+                    strncpy(cmd_peers[cmd_peer_count].ip, optarg, 63);
+                    cmd_peers[cmd_peer_count].port = atoi(colon + 1);
+                    cmd_peer_count++;
+                } else if (!colon) {
                     fprintf(stderr, "Invalid peer format: %s (use IP:PORT)\n", optarg);
                 }
                 break;
@@ -77,6 +81,11 @@ int main(int argc, char *argv[]) {
     result_queue_init();
     process_manager_init();
     mesh_monitor_init();
+
+    // Add back the peers parsed from command line
+    for (int i = 0; i < cmd_peer_count; i++) {
+        peer_manager_add_peer(cmd_peers[i].ip, cmd_peers[i].port);
+    }
 
     // Load peer configuration (optional)
     int loaded_peers = peer_manager_load_peers("peers.conf");
@@ -123,6 +132,13 @@ int main(int argc, char *argv[]) {
     // Create UDP discovery socket
     discovery_socket = socket(AF_INET, SOCK_DGRAM, 0);
     if (discovery_socket >= 0) {
+        // Enable SO_REUSEADDR and SO_REUSEPORT so multiple local terminals can share the same UDP discovery port
+        int reuse = 1;
+        setsockopt(discovery_socket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+#ifdef SO_REUSEPORT
+        setsockopt(discovery_socket, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse));
+#endif
+
         struct sockaddr_in discovery_addr;
         memset(&discovery_addr, 0, sizeof(discovery_addr));
         discovery_addr.sin_family = AF_INET;
@@ -261,21 +277,30 @@ int main(int argc, char *argv[]) {
                 ssize_t bytes_read = recv_all(pending_sockets[i], &msg, sizeof(msg));
 
                 if (bytes_read > 0) {
-                    // Got data - identify and add the peer using real IP:port from message
-                    int peer_idx = peer_manager_find_peer_index(msg.source_ip, msg.source_port);
+                    // Only add to routing table if this is ACTUAL mesh traffic! 
+                    // Local child processes connect to this exact same port just to drop off MSG_TASK_RESULT
+                    // If we blindly add MSG_TASK_RESULT sockets to the peer table, the child process 
+                    // impersonates the original target and completely clobbers the TCP routing map!
+                    
+                    int is_child_process = (msg.type == MSG_TASK_RESULT);
                     int was_new = 0;
-                    if (peer_idx < 0) {
-                        // New peer - add them
-                        peer_manager_add_peer(msg.source_ip, msg.source_port);
-                        peer_idx = peer_manager_find_peer_index(msg.source_ip, msg.source_port);
-                        was_new = 1;
+
+                    if (!is_child_process) {
+                        int peer_idx = peer_manager_find_peer_index(msg.source_ip, msg.source_port);
+                        if (peer_idx < 0) {
+                            // New peer - add them
+                            peer_manager_add_peer(msg.source_ip, msg.source_port);
+                            peer_idx = peer_manager_find_peer_index(msg.source_ip, msg.source_port);
+                            was_new = 1;
+                        }
+                        if (peer_idx >= 0) {
+                            worker_state.peers[peer_idx].socket_fd = pending_sockets[i];
+                            worker_state.peers[peer_idx].is_alive = 1;
+                            worker_state.peers[peer_idx].last_heartbeat = time(NULL);
+                        }
                     }
-                    if (peer_idx >= 0) {
-                        worker_state.peers[peer_idx].socket_fd = pending_sockets[i];
-                        worker_state.peers[peer_idx].is_alive = 1;
-                        worker_state.peers[peer_idx].last_heartbeat = time(NULL);
-                    }
-                    // Process the message
+
+                    // Process the message (handles results, joins, routing, etc)
                     mesh_main_handle_peer_message(pending_sockets[i], &msg);
                     
                     // Gossip this direct connection to the rest of the network!
@@ -793,6 +818,13 @@ void mesh_main_accept_peer_connection(int listen_sock) {
 
     char peer_ip[16];
     inet_ntop(AF_INET, &client_addr.sin_addr, peer_ip, sizeof(peer_ip));
+
+    // Set receive timeout so recv_all doesn't hang the select loop 
+    // if a phantom peer connects but doesn't send the full Message struct
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 200000; // 200ms timeout
+    setsockopt(client_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
 
     log_event("PEER_CONNECTION", "Accepted connection from %s (awaiting identification)", peer_ip);
 

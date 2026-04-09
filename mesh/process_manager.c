@@ -340,11 +340,11 @@ void process_manager_send_result(Task *task, const char *result) {
     memset(&result_msg, 0, sizeof(result_msg));
     result_msg.type = MSG_TASK_RESULT;
     result_msg.task_id = task->task_id;
-    result_msg.source_port = worker_state.my_port;
+    result_msg.source_port = task->source_port;
     
     // Safely copy strings
-    if (worker_state.my_ip[0]) {
-        strncpy(result_msg.source_ip, worker_state.my_ip, sizeof(result_msg.source_ip) - 1);
+    if (task->source_ip[0]) {
+        strncpy(result_msg.source_ip, task->source_ip, sizeof(result_msg.source_ip) - 1);
         result_msg.source_ip[sizeof(result_msg.source_ip) - 1] = '\0';
     }
     

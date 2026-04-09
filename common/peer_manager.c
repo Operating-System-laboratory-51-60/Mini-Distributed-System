@@ -162,9 +162,43 @@ void peer_manager_connect_to_peer(const char *ip, int port) {
     server_addr.sin_port = htons(port);
     inet_pton(AF_INET, ip, &server_addr.sin_addr);
 
+    // Make socket non-blocking for a fast connect timeout
+    int flags = fcntl(sockfd, F_GETFL, 0);
+    fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
+
     int result = connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr));
+    
+    // If it's in progress, wait at most 1 second
+    if (result < 0 && errno == EINPROGRESS) {
+        struct timeval connect_tv;
+        connect_tv.tv_sec = 1; // 1 second timeout for connecting to dead IPs
+        connect_tv.tv_usec = 0;
+        
+        fd_set wset;
+        FD_ZERO(&wset);
+        FD_SET(sockfd, &wset);
+        
+        if (select(sockfd + 1, NULL, &wset, NULL, &connect_tv) == 1) {
+            int so_error = 0;
+            socklen_t len = sizeof(so_error);
+            getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &so_error, &len);
+            if (so_error == 0) {
+                result = 0; // successfully connected!
+            }
+        }
+    }
+
+    // Restore blocking mode for standard operations
+    fcntl(sockfd, F_SETFL, flags);
+
+    // Set receive timeout to prevent recv_all freezing the entire event loop if a peer drops
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 200000; // 200ms
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+
     if (result < 0) {
-        log_network_event("CONNECT_FAILED", ip, port, strerror(errno));
+        log_network_event("CONNECT_FAILED", ip, port, "Timeout or Refusal");
         close(sockfd);
         return;
     }
@@ -245,6 +279,11 @@ void peer_manager_handle_discovery(const char *message, const char *sender_ip) {
 
 // Handle incoming peer join message
 void peer_manager_handle_peer_join(const char *peer_ip, int peer_port) {
+    // SECURITY/ROUTING FIX: Never add ourselves to the routing table via reflected Gossip messages!
+    if (strcmp(peer_ip, worker_state.my_ip) == 0 && peer_port == worker_state.my_port) {
+        return;
+    }
+
     int peer_idx = peer_manager_find_peer_index(peer_ip, peer_port);
 
     if (peer_idx < 0) {
