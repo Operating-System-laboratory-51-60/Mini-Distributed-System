@@ -262,17 +262,21 @@ void peer_manager_handle_discovery(const char *message, const char *sender_ip) {
         int peer_port;
 
         if (sscanf(message + 14, "%15[^:]:%d", peer_ip, &peer_port) == 2) {
-            // Don't add ourselves
+            // 1. Don't add ourselves (ignore our own broadcast echo)
             if (strcmp(peer_ip, worker_state.my_ip) == 0 && peer_port == worker_state.my_port) {
                 return;
             }
 
-            // Add the discovered peer
-            if (peer_manager_add_peer(peer_ip, peer_port) == 0) {
-                log_event("PEER_MANAGER", "Discovered peer %s:%d via broadcast", peer_ip, peer_port);
-                // Try to connect
-                peer_manager_connect_to_peer(peer_ip, peer_port);
+            // 2. Already have an active TCP connection? Skip — do NOT reconnect!
+            int peer_idx = peer_manager_find_peer_index(peer_ip, peer_port);
+            if (peer_idx >= 0 && worker_state.peers[peer_idx].socket_fd != -1) {
+                return; // Active connection exists, ignore broadcast
             }
+
+            // 3. New peer — add and connect
+            peer_manager_add_peer(peer_ip, peer_port);
+            log_event("PEER_MANAGER", "Discovered peer %s:%d via broadcast", peer_ip, peer_port);
+            peer_manager_connect_to_peer(peer_ip, peer_port);
         }
     }
 }

@@ -6,9 +6,18 @@
 #include <getopt.h>
 #include <errno.h>
 
+// ANSI color codes for terminal UI
+#define C_RST "\033[0m"
+#define C_CYD "\033[1;36m"
+#define C_GRN "\033[1;32m"
+#define C_RED "\033[1;31m"
+#define C_YEL "\033[1;33m"
+#define C_MAG "\033[1;35m"
+
+#include <sys/select.h>
+
 // External reference to worker state
 extern WorkerState worker_state;
-#include <sys/select.h>
 
 // Function declarations
 void mesh_main_show_help();
@@ -70,9 +79,13 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    printf("🚀 Starting P2P Mesh Worker\n");
-    printf("   IP: %s, Port: %d\n", my_ip, my_port);
-    printf("   Press 'h' for help, 'q' to quit\n\n");
+    printf("\n" C_MAG
+           "╔══════════════════════════════════════════╗\n"
+           "║       P2P MESH DISTRIBUTED WORKER        ║\n"
+           "╚══════════════════════════════════════════╝\n\n" C_RST);
+    printf("  " C_MAG "IP  " C_RST ": " C_YEL "%s\n" C_RST, my_ip);
+    printf("  " C_MAG "Port" C_RST ": " C_YEL "%d\n\n" C_RST, my_port);
+    printf("  Use " C_GRN "'h'" C_RST " for help | " C_RED "'q'" C_RST " to quit\n\n");
 
     // Initialize all components
     logger_init();
@@ -90,10 +103,10 @@ int main(int argc, char *argv[]) {
     // Load peer configuration (optional)
     int loaded_peers = peer_manager_load_peers("peers.conf");
     if (loaded_peers < 0) {
-        printf("⚠️  No peers.conf found - starting with empty mesh\n");
-        printf("   Peers will auto-discover each other. Use 'discover' to broadcast.\n\n");
+        printf(C_YEL "⚠️  No peers.conf found - starting in empty mesh mode\n" C_RST);
+        printf("   Peers will auto-discover each other. Use " C_CYD "'discover'" C_RST " to broadcast.\n\n");
     } else {
-        printf("✅ Loaded %d peers from peers.conf\n\n", loaded_peers);
+        printf(C_GRN "✅ Loaded %d peers from peers.conf\n\n" C_RST, loaded_peers);
     }
 
     // Create listen socket
@@ -127,7 +140,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("✅ Listening on %s:%d\n", my_ip, my_port);
+    printf(C_GRN "✅ Listening on " C_YEL "%s:%d\n" C_RST, my_ip, my_port);
 
     // Create UDP discovery socket
     discovery_socket = socket(AF_INET, SOCK_DGRAM, 0);
@@ -146,7 +159,7 @@ int main(int argc, char *argv[]) {
         discovery_addr.sin_addr.s_addr = INADDR_ANY;
 
         if (bind(discovery_socket, (struct sockaddr*)&discovery_addr, sizeof(discovery_addr)) == 0) {
-            printf("✅ Discovery listening on UDP port 8081\n");
+            printf(C_GRN "✅ Discovery listening on " C_YEL "UDP port 8081\n" C_RST);
         } else {
             log_warning("MESH_MAIN", "Failed to bind discovery socket");
             close(discovery_socket);
@@ -199,7 +212,9 @@ int main(int argc, char *argv[]) {
     int max_fd;
     char input_buffer[1024];
 
-    printf("✅ Mesh worker ready. Type commands or 'help' for assistance.\n\n");
+    printf(C_GRN "✅ Mesh worker ready. Type commands or 'help' for assistance.\n\n" C_RST);
+    printf(C_CYD "mesh> " C_RST);
+    fflush(stdout);
 
     while (1) {
         // Clear and setup file descriptor set
@@ -341,6 +356,8 @@ int main(int argc, char *argv[]) {
                 }
 
                 mesh_main_process_user_command(input_buffer);
+                printf(C_CYD "mesh> " C_RST);
+                fflush(stdout);
             }
         }
 
@@ -350,7 +367,7 @@ int main(int argc, char *argv[]) {
 
 cleanup:
     // Cleanup
-    printf("\n🛑 Shutting down mesh worker...\n");
+    printf("\n" C_RED "🛑 Shutting down mesh worker...\n" C_RST);
 
     mesh_monitor_stop();
     process_manager_cleanup();
@@ -364,12 +381,12 @@ cleanup:
         close(discovery_socket);
     }
 
-    printf("✅ Shutdown complete.\n");
+    printf(C_GRN "✅ Shutdown complete.\n" C_RST);
     return 0;
 }
 
 void mesh_main_show_help() {
-    printf("P2P Mesh Worker - Distributed Computing System\n\n");
+    printf(C_MAG "P2P Mesh Worker - Distributed Computing System\n\n" C_RST);
     printf("Usage: ./mesh_bin [options]\n\n");
     printf("Options:\n");
     printf("  -i <ip>       IP address to bind to (default: 127.0.0.1)\n");
@@ -391,6 +408,7 @@ void mesh_main_show_help() {
     printf("  q/quit        Exit\n\n");
 }
 
+
 void mesh_main_show_status() {
     int total_peers, connected_peers, avg_load, total_queue_depth;
     mesh_monitor_get_stats(&total_peers, &connected_peers, &avg_load, &total_queue_depth);
@@ -398,32 +416,57 @@ void mesh_main_show_status() {
     int active_children, max_children;
     process_manager_get_stats(&active_children, &max_children);
 
-    printf("\n╔══════════════════════════════════════════════════════════════╗\n");
-    printf("║                    MESH STATUS DASHBOARD                     ║\n");
-    printf("╠══════════════════════════════════════════════════════════════╣\n");
-    printf("║ Worker ID: %-20s Load: ███████░ %-3d%% ║\n", my_ip, worker_state.my_load_percent);
-    printf("║ Mesh Peers: %-2d/%-2d connected         Queue: %-3d tasks    ║\n",
-           connected_peers, total_peers, task_queue_get_depth());
-    printf("║ Active Tasks: %-2d/%-2d                 Results: %-3d items  ║\n",
-           active_children, max_children, result_queue_get_depth());
-    printf("║                                                              ║\n");
-    printf("║ PEER STATUS:                                                 ║\n");
+    // Build ASCII load bar (10 chars, always fixed width - no unicode ambiguity)
+    char load_bar[11];
+    int filled = worker_state.my_load_percent / 10;
+    for (int b = 0; b < 10; b++) load_bar[b] = (b < filled) ? '=' : '-';
+    load_bar[10] = '\0';
 
+    // ── Title block: fixed string literals so box always has correct width ──
+    printf("\n" C_MAG
+           "╔══════════════════════════════════════════╗\n"
+           "║         MESH STATUS DASHBOARD            ║\n"
+           "╚══════════════════════════════════════════╝\n\n" C_RST);
+
+    printf("  " C_MAG "Node   " C_RST ": " C_YEL "%s" C_RST ":" C_YEL "%d\n" C_RST,
+           my_ip, my_port);
+    printf("  " C_MAG "Load   " C_RST ": [" C_GRN "%-10s" C_RST "] " C_YEL "%d%%\n" C_RST,
+           load_bar, worker_state.my_load_percent);
+    printf("  " C_MAG "Tasks  " C_RST ": " C_GRN "%d" C_RST " active / " C_YEL "%d" C_RST " max\n",
+           active_children, max_children);
+    printf("  " C_MAG "Peers  " C_RST ": " C_GRN "%d" C_RST " connected / " C_YEL "%d" C_RST " total\n",
+           connected_peers, total_peers);
+    printf("  " C_MAG "Queue  " C_RST ": " C_CYD "%d" C_RST " tasks   "
+           C_MAG "Results" C_RST ": " C_GRN "%d\n\n" C_RST,
+           task_queue_get_depth(), result_queue_get_depth());
+
+    // ── Peer section ──
+    printf(C_CYD "  ┌─ " C_MAG "PEER STATUS" C_CYD
+           " ──────────────────────────────────────────────┐\n" C_RST);
+
+    if (peer_manager_get_peer_count() == 0) {
+        printf(C_CYD "  │  " C_RST "(no peers connected)\n");
+    }
     for (int i = 0; i < peer_manager_get_peer_count(); i++) {
         PeerInfo *peer = peer_manager_get_peer_info(i);
         if (peer) {
-            printf("║  ┌─ %-15s ─┐                                         ║\n",
-                   peer->is_alive ? "ALIVE" : "DEAD");
-            printf("║  │ Load: %-3d%%  Queue: %-2d │                                   ║\n",
-                   peer->load_percent, peer->queue_depth);
-            printf("║  └─────────────────────┘                             ║\n");
+            char peer_addr[32];
+            snprintf(peer_addr, sizeof(peer_addr), "%s:%d", peer->ip, peer->port);
+            // Color passed as %s (zero display width); plain "ALIVE"/"DEAD " goes to %-5s
+            printf(C_CYD "  │  " C_RST "> " C_CYD "%-22s" C_RST
+                   " [%s%-5s" C_RST "]"
+                   "  Load: " C_YEL "%3d%%" C_RST "  Queue: %d\n",
+                   peer_addr,
+                   peer->is_alive ? C_GRN : C_RED,
+                   peer->is_alive ? "ALIVE" : "DEAD ",
+                   peer->load_percent,
+                   peer->queue_depth);
         }
     }
+    printf(C_CYD "  └──────────────────────────────────────────────────────────┘\n\n");
 
-    printf("║                                                              ║\n");
-    printf("║ RECENT ACTIVITY:                                             ║\n");
-    printf("║  (Check events.log for detailed activity)                    ║\n");
-    printf("╚══════════════════════════════════════════════════════════════╝\n\n");
+    printf(C_MAG "  RECENT ACTIVITY  " C_RST
+           "(see events.log for full detail)\n\n" C_RST);
 }
 
 void mesh_main_process_user_command(char *command) {
@@ -432,48 +475,54 @@ void mesh_main_process_user_command(char *command) {
     log_event("USER_COMMAND", "Received: %s", command);
 
     if (strcmp(command, "help") == 0 || strcmp(command, "h") == 0) {
-        // Show help (we'll implement a more detailed help system later)
-        printf("Available commands:\n");
-        printf("  help          Show this help\n");
-        printf("  status        Show mesh status\n");
-        printf("  discover      Broadcast discovery to find peers\n");
-        printf("  run <file>    Compile and execute C file or run binary\n");
-        printf("  exec <cmd>    Execute shell command\n");
-        printf("  task <n>      Execute sleep task for n seconds\n");
-        printf("  results       Show task results queue\n");
-        printf("  peers         Show peer information\n");
-        printf("  queue         Show task queue\n");
-        printf("  load          Show load information\n");
-        printf("  test_delegate Test task delegation (forces delegation)\n");
-        printf("  q/quit        Exit\n");
+        printf("\n" C_MAG "╔══════════════════════════════════════════╗\n");
+        printf("║         P2P MESH - HELP COMMANDS         ║\n");
+        printf("╚══════════════════════════════════════════╝\n" C_RST);
+        printf(C_MAG "  Mesh Info:\n" C_RST);
+        printf("    " C_CYD "status" C_RST "          Show mesh dashboard\n");
+        printf("    " C_CYD "peers" C_RST "           List all peers + status\n");
+        printf("    " C_CYD "load" C_RST "            Show load & queue metrics\n");
+        printf("    " C_CYD "queue" C_RST "           Show pending task queue\n");
+        printf("    " C_CYD "results" C_RST "         Show completed task results\n");
+        printf(C_MAG "  Task Execution:\n" C_RST);
+        printf("    " C_CYD "task " C_YEL "<n>" C_RST "         Sleep task for n seconds\n");
+        printf("    " C_CYD "exec " C_YEL "<cmd>" C_RST "       Run a shell command\n");
+        printf("    " C_CYD "run "  C_YEL "<file>" C_RST "      Compile & run a C file\n");
+        printf(C_MAG "  Networking:\n" C_RST);
+        printf("    " C_CYD "discover" C_RST "        UDP broadcast to find peers\n");
+        printf("    " C_CYD "test_delegate" C_RST "   Force a task delegation test\n");
+        printf(C_MAG "  Misc:\n" C_RST);
+        printf("    " C_CYD "help" C_RST "            Show this help\n");
+        printf("    " C_CYD "q" C_RST "/" C_CYD "quit" C_RST "          Exit the mesh node\n");
+        printf("\n");
 
     } else if (strcmp(command, "status") == 0) {
         mesh_main_show_status();
 
     } else if (strcmp(command, "discover") == 0) {
-        printf("🔍 Broadcasting discovery message...\n");
+        printf(C_CYD "🔍 Broadcasting discovery message...\n" C_RST);
         peer_manager_broadcast_discovery();
-        printf("✅ Discovery broadcast sent. Other peers should find you.\n");
-        printf("\nPeer Information:\n");
+        printf(C_GRN "✅ Discovery broadcast sent. Other peers should find you.\n" C_RST);
+        printf("\n" C_MAG "Peer Information:\n" C_RST);
         for (int i = 0; i < peer_manager_get_peer_count(); i++) {
             PeerInfo *peer = peer_manager_get_peer_info(i);
             if (peer) {
-                printf("  %s:%d - %s (Load: %d%%, Queue: %d)\n",
-                       peer->ip, peer->port,
-                       peer->is_alive ? "CONNECTED" : "DISCONNECTED",
+                const char* conn_str = peer->is_alive ? (C_GRN "CONNECTED   " C_RST) : (C_RED "DISCONNECTED" C_RST);
+                printf("  " C_CYD "%s:%d" C_RST " - %s (Load: " C_YEL "%d%%" C_RST ", Queue: %d)\n",
+                       peer->ip, peer->port, conn_str,
                        peer->load_percent, peer->queue_depth);
             }
         }
         printf("\n");
 
     } else if (strcmp(command, "peers") == 0) {
-        printf("Peer information:\n");
+        printf(C_MAG "Peer information:\n" C_RST);
         for (int i = 0; i < peer_manager_get_peer_count(); i++) {
             PeerInfo *peer = peer_manager_get_peer_info(i);
             if (peer) {
-                printf("  %s:%d - %s | Load: %d%% | Queue: %d\n",
-                       peer->ip, peer->port,
-                       peer->is_alive ? "CONNECTED" : "DISCONNECTED",
+                const char* conn_str = peer->is_alive ? (C_GRN "CONNECTED   " C_RST) : (C_RED "DISCONNECTED" C_RST);
+                printf("  " C_CYD "%s:%d" C_RST " - %s | Load: " C_YEL "%d%%" C_RST " | Queue: %d\n",
+                       peer->ip, peer->port, conn_str,
                        peer->load_percent, peer->queue_depth);
             }
         }
@@ -486,12 +535,12 @@ void mesh_main_process_user_command(char *command) {
         int active_children, max_children;
         process_manager_get_stats(&active_children, &max_children);
         
-        printf("📊 Load Information:\n");
-        printf("  Current load: %d%%\n", worker_state.my_load_percent);
-        printf("  Active tasks: %d/%d\n", active_children, max_children);
-        printf("  Queue depth: %d/%d\n", task_queue_get_depth(), MAX_QUEUE);
-        printf("  Results stored: %d\n", result_queue_get_depth());
-        printf("  Peers connected: %d/%d\n", peer_manager_get_connected_count(), peer_manager_get_peer_count());
+        printf(C_MAG "📊 Load Information:\n" C_RST);
+        printf("  Current load: " C_YEL "%d%%\n" C_RST, worker_state.my_load_percent);
+        printf("  Active tasks: " C_CYD "%d/%d\n" C_RST, active_children, max_children);
+        printf("  Queue depth: " C_CYD "%d/%d\n" C_RST, task_queue_get_depth(), MAX_QUEUE);
+        printf("  Results stored: " C_GRN "%d\n" C_RST, result_queue_get_depth());
+        printf("  Peers connected: " C_GRN "%d/%d\n" C_RST, peer_manager_get_connected_count(), peer_manager_get_peer_count());
         printf("\n");
 
     } else if (strncmp(command, "run ", 4) == 0) {
@@ -499,7 +548,7 @@ void mesh_main_process_user_command(char *command) {
         const char *filename = command + 4;
         struct stat st;
         if (stat(filename, &st) != 0) {
-            printf("❌ File not found: %s\n", filename);
+            printf(C_RED "❌ File not found: %s\n" C_RST, filename);
         } else {
             // Check if it's a C file (for logging purposes)
             int is_c_file = (strlen(filename) > 2 && strcmp(filename + strlen(filename) - 2, ".c") == 0);
@@ -523,7 +572,7 @@ void mesh_main_process_user_command(char *command) {
                 strncpy(task.source_ip, my_ip, sizeof(task.source_ip) - 1);
                 task.source_port = my_port;
                 
-                printf("⚖️  Local load high (%d%%), delegating to peer...\n", load_percent);
+                printf(C_YEL "⚖️  Local load high (%d%%), delegating to peer...\n" C_RST, load_percent);
                 mesh_main_delegate_task_to_peer(&task);
             } else {
                 // Execute locally using async fork (non-blocking)
@@ -541,16 +590,16 @@ void mesh_main_process_user_command(char *command) {
 
                 if (process_manager_execute_task(&task) == 0) {
                     if (is_c_file) {
-                        printf("▶️  Compiling and executing: %s (Task ID: %d, async)\n", filename, task.task_id);
+                        printf(C_GRN "▶️  Compiling and executing" C_RST ": %s (Task ID: " C_CYD "%d" C_RST ", async)\n", filename, task.task_id);
                     } else {
-                        printf("▶️  Executing binary: %s (Task ID: %d, async)\n", filename, task.task_id);
+                        printf(C_GRN "▶️  Executing binary" C_RST ": %s (Task ID: " C_CYD "%d" C_RST ", async)\n", filename, task.task_id);
                     }
-                    printf("✅ Task submitted. Main loop continues accepting commands.\n");
+                    printf(C_GRN "✅ Task submitted. Main loop continues accepting commands.\n" C_RST);
                 } else {
-                    printf("⚠️ Local max capacity reached (%d/%d). Adding to queue...\n", 
+                    printf(C_YEL "⚠️ Local max capacity reached (%d/%d). Adding to queue...\n" C_RST, 
                            worker_state.child_count, MAX_CONCURRENT_TASKS);
                     if (task_queue_enqueue(&task) < 0) {
-                        printf("❌ System completely overwhelmed. Task rejected.\n");
+                        printf(C_RED "❌ System completely overwhelmed. Task rejected.\n" C_RST);
                     }
                 }
             }
@@ -573,7 +622,7 @@ void mesh_main_process_user_command(char *command) {
             strncpy(task.source_ip, my_ip, sizeof(task.source_ip) - 1);
             task.source_port = my_port;
             
-            printf("⚖️  Local load high (%d%%), delegating to peer...\n", load_percent);
+            printf(C_YEL "⚖️  Local load high (%d%%), delegating to peer...\n" C_RST, load_percent);
             mesh_main_delegate_task_to_peer(&task);
         } else {
             // Execute locally using async fork (non-blocking)
@@ -587,21 +636,22 @@ void mesh_main_process_user_command(char *command) {
             task.source_port = my_port;
 
             if (process_manager_execute_task(&task) == 0) {
-                printf("▶️  Executing command: %s (Task ID: %d, async)\n", cmd, task.task_id);
-                printf("✅ Task submitted. Main loop continues accepting commands.\n");
+                printf(C_GRN "▶️  Executing command" C_RST ": " C_CYD "%s" C_RST " (Task ID: " C_YEL "%d" C_RST ", async)\n", cmd, task.task_id);
+                printf(C_GRN "✅ Task submitted. Main loop continues accepting commands.\n" C_RST);
             } else {
-                printf("⚠️ Local max capacity reached (%d/%d). Adding to queue...\n", 
+                printf(C_YEL "⚠️ Local max capacity reached (%d/%d). Adding to queue...\n" C_RST, 
                        worker_state.child_count, MAX_CONCURRENT_TASKS);
                 if (task_queue_enqueue(&task) < 0) {
-                    printf("❌ System completely overwhelmed. Task rejected.\n");
+                    printf(C_RED "❌ System completely overwhelmed. Task rejected.\n" C_RST);
                 }
             }
         }
     } else if (strcmp(command, "results") == 0) {
         // Display results queue
         if (result_queue_is_empty()) {
-            printf("📋 No results in queue yet.\n");
+            printf(C_YEL "📋 No results in queue yet.\n" C_RST);
         } else {
+            printf(C_MAG "\n══ Task Results ══\n" C_RST);
             result_queue_display_latest(10);
         }
 
@@ -627,7 +677,7 @@ void mesh_main_process_user_command(char *command) {
                 strncpy(task.source_ip, my_ip, sizeof(task.source_ip) - 1);
                 task.source_port = my_port;
                 
-                printf("⚖️  Local load high (%d%%), delegating to peer...\n", load_percent);
+                printf(C_YEL "⚖️  Local load high (%d%%), delegating to peer...\n" C_RST, load_percent);
                 mesh_main_delegate_task_to_peer(&task);
             } else {
                 // Execute locally using async fork (non-blocking)
@@ -641,13 +691,13 @@ void mesh_main_process_user_command(char *command) {
                 task.source_port = my_port;
 
                 if (process_manager_execute_task(&task) == 0) {
-                    printf("▶️  Executing sleep task %d: %d seconds (async)\n", task.task_id, sleep_seconds);
-                    printf("✅ Task submitted. Main loop continues accepting commands.\n");
+                    printf(C_GRN "▶️  Executing sleep task " C_YEL "%d" C_GRN ": " C_YEL "%d" C_GRN " seconds (async)\n" C_RST, task.task_id, sleep_seconds);
+                    printf(C_GRN "✅ Task submitted. Main loop continues accepting commands.\n" C_RST);
                 } else {
-                    printf("⚠️ Local max capacity reached (%d/%d). Adding to queue...\n", 
+                    printf(C_YEL "⚠️ Local max capacity reached (%d/%d). Adding to queue...\n" C_RST, 
                            worker_state.child_count, MAX_CONCURRENT_TASKS);
                     if (task_queue_enqueue(&task) < 0) {
-                        printf("❌ System completely overwhelmed. Task rejected.\n");
+                        printf(C_RED "❌ System completely overwhelmed. Task rejected.\n" C_RST);
                     }
                 }
             }
@@ -664,12 +714,12 @@ void mesh_main_process_user_command(char *command) {
         strncpy(task.source_ip, my_ip, sizeof(task.source_ip) - 1);
         task.source_port = my_port;
 
-        printf("🧪 Testing delegation: Task %d (sleep 2s)\n", task.task_id);
+        printf(C_CYD "🧪 Testing delegation: Task " C_YEL "%d" C_CYD " (sleep 2s)\n" C_RST, task.task_id);
         mesh_main_delegate_task_to_peer(&task);
 
     } else {
-        printf("❌ Unknown command: %s\n", command);
-        printf("Type 'help' for available commands.\n");
+        printf(C_RED "❌ Unknown command: " C_YEL "'%s'" C_RED "\n" C_RST, command);
+        printf("   Type " C_CYD "'help'" C_RST " to see available commands.\n");
     }
 }
 
@@ -759,10 +809,10 @@ void mesh_main_handle_peer_message(int peer_sock, Message *msg) {
 
             // Execute the delegated task
             if (process_manager_execute_task(&task) == 0) {
-                printf("▶️  Executing delegated task %d from %s:%d\n",
+                printf(C_CYD "▶️  Executing delegated task " C_YEL "%d" C_CYD " from " C_RST "%s:%d\n",
                        task.task_id, msg->source_ip, msg->source_port);
             } else {
-                printf("❌ Cannot execute delegated task - max concurrent tasks reached\n");
+                printf(C_RED "❌ Cannot execute delegated task - max concurrent tasks reached\n" C_RST);
             }
             break;
         }
@@ -773,7 +823,7 @@ void mesh_main_handle_peer_message(int peer_sock, Message *msg) {
                 log_event("TASK_RESULT", "Result for task %d received natively. Task Complete.", msg->task_id);
                 // Store result in local queue
                 result_queue_enqueue(msg->task_id, msg->command, msg->output, 0, 1);
-                printf("\n📨 [RESULT] Task %d completed successfully!\n%s\n", msg->task_id, msg->output);
+                printf("\n" C_GRN "📨 [RESULT] Task " C_CYD "%d" C_GRN " completed successfully!\n" C_RST "%s\n", msg->task_id, msg->output);
             } else {
                 // We are NOT the source, we just executed it. Route the result back to the TRUE source!
                 log_event("TASK_RESULT", "Routing result for task %d back to source %s:%d",
@@ -783,8 +833,8 @@ void mesh_main_handle_peer_message(int peer_sock, Message *msg) {
                 if (source_idx >= 0) {
                     int source_sock = peer_manager_get_peer_socket(source_idx);
                     if (source_sock > 0) {
-                        send(source_sock, msg, sizeof(Message), 0);
-                        printf("🔄 Routed task %d result back to source %s:%d\n", 
+                        send_all(source_sock, msg, sizeof(Message));
+                        printf(C_MAG "🔄 Routed task " C_YEL "%d" C_MAG " result back to source " C_RST "%s:%d\n", 
                                msg->task_id, msg->source_ip, msg->source_port);
                     } else {
                         log_warning("MESH_MAIN", "Cannot route result: source socket disconnected!");

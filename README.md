@@ -126,29 +126,32 @@ The first peer in the mesh is the initial entry point. Start it without `-P`.
 - `-i` is this peer's local IP.
 - `-p` is this peer's listening port.
 
-### Join the mesh
-After the first peer is running, any other peer can join the mesh in one of three ways.
+### Tested Configuration
+The system has been successfully tested across **4 different Linux machines** on a LAN. Connectivity, task delegation, and fault tolerance (crashing and reconnecting peers) all performed flawlessly.
+
+### Join the mesh (Cross-Machine)
+After the first peer is running, any other peer can join the mesh. The most reliable way across physical machines (especially if UDP is blocked by hotspots) is via TCP bootstrap:
 
 1. Join while starting the peer:
 ```bash
-./mesh_bin -i 192.168.1.11 -p 8080 -P 192.168.1.10:8080
+./mesh_bin -i <YOUR_IP> -p 8080 -P <SEED_PEER_IP>:8080
 ```
-- `-P` is the address of an already-running peer in the mesh.
+- `-P` is the address of an already-running peer in the mesh. Once you connect to ONE peer, the **Gossip Protocol** will automatically share your IP with the rest of the mesh.
 
 2. Start the peer first, then join later from its command shell:
 ```bash
-./mesh_bin -i 192.168.1.11 -p 8080
+./mesh_bin -i <YOUR_IP> -p 8080
 ```
 Then enter:
 ```bash
-join 192.168.1.10:8080
+join <SEED_PEER_IP>:8080
 ```
 
-3. Discover peers automatically on the LAN:
+3. Discover peers automatically on the LAN (Local/Compatible networks only):
 ```bash
 discover
 ```
-- Use this when peers are on the same local network.
+- Uses UDP broadcast, but may be blocked by some Wi-Fi hotspots or WSL2 boundaries. Use `-P` if this fails.
 
 ### Optional `peers.conf`
 Create a file with one `IP:PORT` entry per line:
@@ -182,25 +185,21 @@ Create a file with one `IP:PORT` entry per line:
 A clean and fully aligned ASCII dashboard example:
 
 ```
-╔════════════════════════════════════════════════════════════════════════╗
-║                          MESH STATUS DASHBOARD                         ║
-╠════════════════════════════════════════════════════════════════════════╣
-║ Peer: 192.168.1.10                        Load: ███████░ 15%           ║
-║ Connected peers: 3 / 4                    Queue: 0 tasks               ║
-║ Active tasks: 2 / 10                      Average load: 23%            ║
-╠════════════════════════════════════════════════════════════════════════╣
-║                             PEER STATUS DETAILS                        ║
-║  ┌───────────────────────────────┐  ┌───────────────────────────────┐  ║
-║  │ Peer B | Load: 15% | ALIVE    │  │ Peer C | Load: 30% | ALIVE    │  ║
-║  └───────────────────────────────┘  └───────────────────────────────┘  ║
-║  ┌───────────────────────────────┐                                     ║
-║  │ Peer D | Load: 25% | ALIVE    │                                     ║
-║  └───────────────────────────────┘                                     ║
-╠════════════════════════════════════════════════════════════════════════╣
-║ Recent activity:                                                       ║
-║  • Task #112 assigned to Peer C                                        ║
-║  • Peer D joined the mesh                                              ║
-╚════════════════════════════════════════════════════════════════════════╝
+╔══════════════════════════════════════════╗
+║         MESH STATUS DASHBOARD            ║
+╚══════════════════════════════════════════╝
+
+  Node   : 192.168.1.10:8080
+  Load   : [====------] 45%
+  Tasks  : 2 active / 10 max
+  Peers  : 3 connected / 4 total
+  Queue  : 0 tasks   Results: 1
+
+┌─ PEER STATUS ──────────────────────────────┐
+│  > 192.168.1.11:8080   [ALIVE]  Load: 15%  Queue: 0
+│  > 192.168.1.12:8080   [ALIVE]  Load: 30%  Queue: 0
+│  > 192.168.1.13:8080   [ALIVE]  Load: 25%  Queue: 0
+└──────────────────────────────────────────────┘
 ```
 
 ---
@@ -235,16 +234,18 @@ A clean and fully aligned ASCII dashboard example:
 - The mesh chooses the best available peer for each task.
 - Tasks queue locally when no immediate peer capacity exists.
 
-### Fault Tolerance
+### Fault Tolerance & Stability
 - Detects failed peers through TCP and heartbeat monitoring.
 - Removes dead peers automatically from the mesh.
 - Reassigns tasks when a peer disappears.
+- **Discovery Storm Prevention**: Explicitly ignores broadcasts from already-connected peers to prevent TCP connection tearing.
+- **Payload Reliability**: Uses `send_all` and `recv_all` helpers to guarantee atomic delivery of large binary payloads and task results without fragmentation.
 
 ### Multi-Process Execution
 - Uses `fork()` so task execution does not block the mesh.
 - Keeps the main peer responsive while child processes work.
+- Aggressive file descriptor (FD) scrubbing prevents "Phantom Socket Leaks".
 - Logs orphaned task results if a peer crashes mid-execution.
-
 ---
 
 ## 📌 Notes
