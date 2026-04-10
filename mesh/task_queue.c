@@ -103,8 +103,8 @@ void task_queue_check_and_process() {
             log_event("TASK_QUEUE", "Forwarding queued task %d to %s:%d (load %d%%)",
                      task.task_id, peer->ip, peer->port, peer->load_percent);
 
-            // TODO: Forward task to peer
-            // This will be implemented when we create the task forwarding logic
+            // Forward task to peer using existing delegation logic
+            mesh_main_delegate_task_to_peer(&task);
         }
     } else {
         // No peers available, log current status

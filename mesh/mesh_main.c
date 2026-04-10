@@ -27,7 +27,7 @@ void mesh_main_handle_peer_message(int peer_sock, Message *msg);
 void mesh_main_accept_peer_connection(int listen_sock);
 void mesh_main_handle_discovery_message(int discovery_sock);
 void mesh_main_broadcast_message(Message *msg);
-void mesh_main_delegate_task_to_peer(Task *task);
+int mesh_main_delegate_task_to_peer(Task *task);
 
 // Global state
 static int listen_socket = -1;
@@ -572,8 +572,13 @@ void mesh_main_process_user_command(char *command) {
                 strncpy(task.source_ip, my_ip, sizeof(task.source_ip) - 1);
                 task.source_port = my_port;
                 
-                printf(C_YEL "⚖️  Local load high (%d%%), delegating to peer...\n" C_RST, load_percent);
-                mesh_main_delegate_task_to_peer(&task);
+                printf(C_YEL "⚖️  Local load high (%d%%), attempting to delegate...\n" C_RST, load_percent);
+                if (mesh_main_delegate_task_to_peer(&task) < 0) {
+                    printf(C_YEL "⚠️ Mesh overwhelmed. Adding to local queue...\n" C_RST);
+                    if (task_queue_enqueue(&task) < 0) {
+                        printf(C_RED "❌ System completely overwhelmed. Task rejected.\n" C_RST);
+                    }
+                }
             } else {
                 // Execute locally using async fork (non-blocking)
                 Task task;
@@ -622,8 +627,13 @@ void mesh_main_process_user_command(char *command) {
             strncpy(task.source_ip, my_ip, sizeof(task.source_ip) - 1);
             task.source_port = my_port;
             
-            printf(C_YEL "⚖️  Local load high (%d%%), delegating to peer...\n" C_RST, load_percent);
-            mesh_main_delegate_task_to_peer(&task);
+            printf(C_YEL "⚖️  Local load high (%d%%), attempting to delegate...\n" C_RST, load_percent);
+            if (mesh_main_delegate_task_to_peer(&task) < 0) {
+                printf(C_YEL "⚠️ Mesh overwhelmed. Adding to local queue...\n" C_RST);
+                if (task_queue_enqueue(&task) < 0) {
+                    printf(C_RED "❌ System completely overwhelmed. Task rejected.\n" C_RST);
+                }
+            }
         } else {
             // Execute locally using async fork (non-blocking)
             Task task;
@@ -677,8 +687,13 @@ void mesh_main_process_user_command(char *command) {
                 strncpy(task.source_ip, my_ip, sizeof(task.source_ip) - 1);
                 task.source_port = my_port;
                 
-                printf(C_YEL "⚖️  Local load high (%d%%), delegating to peer...\n" C_RST, load_percent);
-                mesh_main_delegate_task_to_peer(&task);
+                printf(C_YEL "⚖️  Local load high (%d%%), attempting to delegate...\n" C_RST, load_percent);
+                if (mesh_main_delegate_task_to_peer(&task) < 0) {
+                    printf(C_YEL "⚠️ Mesh overwhelmed. Adding to local queue...\n" C_RST);
+                    if (task_queue_enqueue(&task) < 0) {
+                        printf(C_RED "❌ System completely overwhelmed. Task rejected.\n" C_RST);
+                    }
+                }
             } else {
                 // Execute locally using async fork (non-blocking)
                 Task task;
@@ -911,10 +926,10 @@ void mesh_main_broadcast_message(Message *msg) {
     }
 }
 
-void mesh_main_delegate_task_to_peer(Task *task) {
+int mesh_main_delegate_task_to_peer(Task *task) {
     // Find the peer with lowest load
     int best_peer_idx = -1;
-    int lowest_load = 101;
+    int lowest_load = 70; // Only delegate to peers strictly under 70% load
 
     for (int i = 0; i < peer_manager_get_peer_count(); i++) {
         PeerInfo *peer = peer_manager_get_peer_info(i);
@@ -925,8 +940,7 @@ void mesh_main_delegate_task_to_peer(Task *task) {
     }
 
     if (best_peer_idx < 0) {
-        printf("❌ No alive peers available for delegation\n");
-        return;
+        return -1; // Indicate failure to delegate so caller can queue it
     }
 
     PeerInfo *best_peer = peer_manager_get_peer_info(best_peer_idx);
@@ -966,10 +980,13 @@ void mesh_main_delegate_task_to_peer(Task *task) {
                    task->task_id, best_peer->ip, best_peer->port, best_peer->load_percent);
             log_event("TASK_DELEGATED", "Task %d -> %s:%d",
                      task->task_id, best_peer->ip, best_peer->port);
+            return 0;
         } else {
             printf("❌ Failed to send task to peer %s:%d\n", best_peer->ip, best_peer->port);
+            return -1;
         }
     } else {
         printf("❌ No socket connection to peer %s:%d\n", best_peer->ip, best_peer->port);
+        return -1;
     }
 }

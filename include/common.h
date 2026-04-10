@@ -209,5 +209,6 @@ void mesh_monitor_print_status();
 void mesh_monitor_force_load_broadcast();
 void mesh_monitor_stop();
 void mesh_monitor_start();
+int mesh_main_delegate_task_to_peer(Task *task);
 
 #endif
