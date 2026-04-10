@@ -35,12 +35,51 @@ static int discovery_socket = -1; // NEW: UDP socket for peer discovery
 static char my_ip[16] = "127.0.0.1"; // Default to localhost
 static int my_port = PORT;
 
+// Auto-detect LAN IP by enumerating network interfaces via getifaddrs().
+// Strictly picks the first non-loopback, UP, IPv4 (AF_INET) interface,
+// skipping virtual adapters like docker0, veth*, br-*.
+#include <ifaddrs.h>
+#include <net/if.h>
+static void auto_detect_lan_ip(char *ip_buf, size_t buf_len) {
+    struct ifaddrs *ifaddr, *ifa;
+    if (getifaddrs(&ifaddr) == -1) return;
+
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL) continue;
+
+        // Strictly IPv4 only
+        if (ifa->ifa_addr->sa_family != AF_INET) continue;
+
+        // Must be UP and RUNNING
+        if (!(ifa->ifa_flags & IFF_UP) || !(ifa->ifa_flags & IFF_RUNNING)) continue;
+
+        // Skip loopback (lo)
+        if (ifa->ifa_flags & IFF_LOOPBACK) continue;
+
+        // Skip common virtual/container interfaces
+        if (strncmp(ifa->ifa_name, "docker", 6) == 0 ||
+            strncmp(ifa->ifa_name, "veth",   4) == 0 ||
+            strncmp(ifa->ifa_name, "br-",    3) == 0 ||
+            strncmp(ifa->ifa_name, "virbr",  5) == 0) continue;
+
+        // Found a real LAN interface — extract its IPv4 address
+        struct sockaddr_in *addr = (struct sockaddr_in *)ifa->ifa_addr;
+        inet_ntop(AF_INET, &addr->sin_addr, ip_buf, buf_len);
+        break;
+    }
+
+    freeifaddrs(ifaddr);
+}
+
 // Pending incoming connections (waiting for MSG_PEER_JOIN to identify real port)
 #define MAX_PENDING_CONNECTIONS 10
 static int pending_sockets[MAX_PENDING_CONNECTIONS];
 static int pending_count = 0;
 
 int main(int argc, char *argv[]) {
+    // Auto-detect LAN IP before parsing args (so -i can override)
+    auto_detect_lan_ip(my_ip, sizeof(my_ip));
+
     // Parse command line arguments
     int opt;
     int test_mode = 0;

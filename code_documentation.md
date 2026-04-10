@@ -591,13 +591,45 @@ clean:
 
 ## 🚀 10. Deployment & Usage
 
+### Zero-Config Startup (Recommended)
+The mesh binary **automatically detects your machine's LAN IPv4 address** at startup using the `getifaddrs()` system call. It enumerates all network interfaces and applies strict filters:
+- **`AF_INET` only** — guarantees IPv4, never picks an IPv6 address
+- **`IFF_UP` + `IFF_RUNNING`** — skips disabled/disconnected interfaces
+- **`IFF_LOOPBACK`** — ignores `127.0.0.1`
+- **Name-based skip** — ignores virtual adapters (`docker0`, `veth*`, `br-*`, `virbr*`)
+
+The first real LAN interface that passes all filters (typically `eth0` or `wlan0`) is selected.
+
+**Just run — no arguments needed:**
+```bash
+./mesh_bin
+```
+
+The banner confirms which IP was auto-detected:
+```
+╔══════════════════════════════════════════╗
+║       P2P MESH DISTRIBUTED WORKER        ║
+╚══════════════════════════════════════════╝
+
+  IP  : 192.168.1.10      ← auto-detected via getifaddrs()
+  Port: 8080
+```
+
+### Manual IP Override (Advanced)
+If you have multiple network interfaces or need a **strict, specific address** (e.g., a VPN adapter, a secondary NIC), you can override the auto-detection:
+```bash
+./mesh_bin -i 10.0.0.5 -p 9090
+```
+- `-i` — force a specific IPv4 address (overrides auto-detection)
+- `-p` — use a custom port (default: 8080)
+
 ### Single Machine Testing (Two Terminals)
 ```bash
 # Terminal 1 — Start first peer (seed node)
-./mesh_bin -i 127.0.0.1 -p 8080
+./mesh_bin -p 8080
 
 # Terminal 2 — Start second peer and connect to seed via -P flag
-./mesh_bin -i 127.0.0.1 -p 8081 -P 127.0.0.1:8080
+./mesh_bin -p 8081 -P 127.0.0.1:8080
 
 # From either terminal, submit tasks:
 task 5
@@ -606,20 +638,21 @@ status
 
 ### Multi-Machine Lab Demo (4 Machines)
 ```bash
-# Machine 1 — seed node (start first, no -P needed)
-./mesh_bin -i 192.168.1.10 -p 8080
+# Machine 1 — seed node (just run, IP auto-detected)
+./mesh_bin
 
-# Machine 2 — join via seed
-./mesh_bin -i 192.168.1.11 -p 8080 -P 192.168.1.10:8080
+# Machine 2 — join via seed (IP auto-detected, connect to seed)
+./mesh_bin -P 192.168.1.10:8080
 
 # Machine 3 — join via seed
-./mesh_bin -i 192.168.1.12 -p 8080 -P 192.168.1.10:8080
+./mesh_bin -P 192.168.1.10:8080
 
 # Machine 4 — join via seed
-./mesh_bin -i 192.168.1.13 -p 8080 -P 192.168.1.10:8080
+./mesh_bin -P 192.168.1.10:8080
 
 # The Gossip Protocol automatically builds the full mesh from this point.
 # Machines 2, 3, 4 do NOT need to know each other upfront.
+# No -i flag needed — each machine auto-detects its own LAN IP.
 ```
 
 ### Interactive Commands
@@ -1160,3 +1193,4 @@ result_msg.execution_ms = elapsed_ms;
 | File I/O & logging | `fopen()`, `fprintf()`, `fwrite()`, `remove()` | `logger.c`, `process_manager.c` |
 | Timing / measurement | `gettimeofday()` | `process_manager.c` |
 | IPC (loopback socket) | TCP loopback to `worker_state.my_ip` | `process_manager.c` |
+| Network interface discovery | `getifaddrs()`, `freeifaddrs()`, `IFF_UP/LOOPBACK` | `mesh_main.c` (auto-detect LAN IP) |

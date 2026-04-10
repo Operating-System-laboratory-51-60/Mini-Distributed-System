@@ -117,25 +117,44 @@ make
 make clean
 ```
 
-### Starting the First Peer
-The first peer is the seed node. Start it with your machine's IP and chosen port:
+### Starting the First Peer (Zero-Config — Recommended)
+The mesh binary **automatically detects your machine's LAN IPv4 address** at startup using `getifaddrs()`. It scans all network interfaces, skips loopback (`127.0.0.1`), IPv6, and virtual adapters (docker, veth, etc.), and picks the first real LAN interface (e.g., `eth0` or `wlan0`).
+
+**Just run:**
+```bash
+./mesh_bin
+```
+
+That's it! The banner will confirm which IP was auto-detected:
+```
+╔══════════════════════════════════════════╗
+║       P2P MESH DISTRIBUTED WORKER        ║
+╚══════════════════════════════════════════╝
+
+  IP  : 192.168.1.10      ← auto-detected
+  Port: 8080
+```
+
+### Manual IP Override (Advanced)
+If you have multiple network interfaces or need a **strict, specific address** (e.g., a VPN adapter, a secondary NIC), you can override the auto-detection:
 
 ```bash
-./mesh_bin -i 192.168.1.10 -p 8080
+./mesh_bin -i 10.0.0.5 -p 9090
 ```
-- `-i` — this peer's LAN IP address
-- `-p` — port to listen on (use the same port on all machines)
+- `-i` — force a specific IPv4 address (overrides auto-detection)
+- `-p` — use a custom port (default: 8080)
 
 ### Joining the Mesh — Other Machines
 Use the `-P` flag to connect to the seed node at startup. This is the **recommended and most reliable** method:
 
 ```bash
-./mesh_bin -i <YOUR_IP> -p 8080 -P 192.168.1.10:8080
+./mesh_bin -P 192.168.1.10:8080
 ```
 
 - `-P SEED_IP:PORT` — connects to an already-running peer
 - Once you connect to **one** peer, the **Gossip Protocol** automatically propagates your address to the entire mesh
 - **No manual file editing required** — the mesh self-configures
+- The joining node's own IP is auto-detected, so no `-i` needed
 
 > ⚠️ **Why `-P` and not UDP discover?** `discover` uses UDP broadcast which is blocked by most Wi-Fi hotspots (AP isolation) and WSL2 NAT boundaries. Always use `-P` for cross-machine setups.
 
@@ -397,6 +416,42 @@ Used in `process_manager.c` to measure and report task execution time in millise
 | **IPC** | TCP loopback to `worker_state.my_ip` for child→parent result routing |
 | **Timing** | `gettimeofday()` for execution time measurement |
 | **Concurrency** | Multi-process with `fork()`, single-thread event loop with `select()` |
+| **Network Interface Discovery** | `getifaddrs()` for automatic LAN IPv4 detection at startup |
+
+---
+
+### 10. Network Interface Discovery — `getifaddrs()`
+
+The mesh binary **auto-detects the machine's LAN IPv4 address** at startup — no manual `-i` flag required. This is implemented using the POSIX `getifaddrs()` system call in `mesh_main.c`:
+
+```c
+#include <ifaddrs.h>
+#include <net/if.h>
+
+static void auto_detect_lan_ip(char *ip_buf, size_t buf_len) {
+    struct ifaddrs *ifaddr, *ifa;
+    if (getifaddrs(&ifaddr) == -1) return;
+
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL) continue;
+        if (ifa->ifa_addr->sa_family != AF_INET) continue;           // IPv4 only
+        if (!(ifa->ifa_flags & IFF_UP)) continue;                    // Must be UP
+        if (ifa->ifa_flags & IFF_LOOPBACK) continue;                 // Skip 127.0.0.1
+        if (strncmp(ifa->ifa_name, "docker", 6) == 0) continue;      // Skip virtual
+
+        struct sockaddr_in *addr = (struct sockaddr_in *)ifa->ifa_addr;
+        inet_ntop(AF_INET, &addr->sin_addr, ip_buf, buf_len);
+        break;
+    }
+    freeifaddrs(ifaddr);
+}
+```
+
+**Key OS concepts:**
+- `getifaddrs()` returns a linked list of **all** network interfaces on the system
+- Each entry contains: interface name (`eth0`, `wlan0`, `lo`), address family (`AF_INET`/`AF_INET6`), flags (`IFF_UP`, `IFF_LOOPBACK`)
+- `freeifaddrs()` releases the allocated memory (mandatory to avoid leaks)
+- The `-i` flag still works as a manual override for advanced/multi-NIC setups
 
 ---
 
