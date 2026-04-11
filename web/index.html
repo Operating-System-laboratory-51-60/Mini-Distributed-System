@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P2P Mesh Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Top Bar -->
+    <header class="topbar">
+        <div class="topbar-left">
+            <div class="pulse-dot"></div>
+            <h1>P2P Mesh</h1>
+            <span class="node-id" id="local-ip">--</span>
+        </div>
+        <div class="topbar-stats">
+            <div class="stat">
+                <span class="stat-label">CPU</span>
+                <div class="mini-bar"><div id="local-load-bar" class="mini-bar-fill" style="width:0%"></div></div>
+                <span class="stat-val" id="local-load-text">0%</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Tasks</span>
+                <span class="stat-val accent" id="local-active-text">0/10</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Queue</span>
+                <span class="stat-val" id="local-queue-text">0</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Peers</span>
+                <span class="stat-val green" id="peer-count">0</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main 3-Panel Layout -->
+    <main class="panels">
+        <!-- Left: Peers -->
+        <section class="panel peers-panel">
+            <div class="panel-header">
+                <h2>Connected Peers</h2>
+                <button class="btn-discover" onclick="discoverPeers()">📡 Discover LAN & WiFi</button>
+            </div>
+            <div class="peer-list" id="peers-container">
+                <div class="peer-empty">No peers connected</div>
+            </div>
+        </section>
+
+        <!-- Center: Task Dispatch -->
+        <section class="panel dispatch-panel">
+            <h2>Dispatch Task</h2>
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('cmd')">Command</button>
+                <button class="tab" onclick="switchTab('code')">Upload .c</button>
+            </div>
+            <div id="tab-cmd" class="tab-body active">
+                <select id="task-type">
+                    <option value="exec">Shell Command</option>
+                    <option value="sleep">Sleep (seconds)</option>
+                </select>
+                <input type="text" id="task-arg" placeholder="e.g. uname -a or 5">
+                <button class="btn-go" onclick="submitSimpleTask()">Execute ▶</button>
+            </div>
+            <div id="tab-code" class="tab-body">
+                <label class="file-drop" id="file-drop-zone">
+                    <input type="file" id="c-file-input" accept=".c,.cpp" hidden>
+                    <span id="file-label">Drop or click to select .c file</span>
+                </label>
+                <button class="btn-go" onclick="submitCodeTask()">Compile & Run ▶</button>
+            </div>
+        </section>
+
+        <!-- Right: Terminal Output -->
+        <section class="panel terminal-panel">
+            <h2>Result Stream <span class="result-count" id="result-count">0</span></h2>
+            <div class="terminal" id="terminal-output">
+                <div class="tl sys">Waiting for results...</div>
+            </div>
+        </section>
+    </main>
+
+    <script src="main.js"></script>
+</body>
+</html>

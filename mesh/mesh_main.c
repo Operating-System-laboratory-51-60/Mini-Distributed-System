@@ -3,8 +3,10 @@
  */
 
 #include "../include/common.h"
+#include "../include/mesh_http.h"
 #include <getopt.h>
 #include <errno.h>
+#include <fcntl.h>
 
 // ANSI color codes for terminal UI
 #define C_RST "\033[0m"
@@ -32,6 +34,7 @@ int mesh_main_delegate_task_to_peer(Task *task);
 // Global state
 static int listen_socket = -1;
 static int discovery_socket = -1; // NEW: UDP socket for peer discovery
+static int http_listen_socket = -1; // NEW: HTTP dashboard server
 static char my_ip[16] = "127.0.0.1"; // Default to localhost
 static int my_port = PORT;
 
@@ -208,6 +211,15 @@ int main(int argc, char *argv[]) {
 
     // Connect to known peers
     peer_manager_connect_to_all();
+    
+    // Initialize Web Dashboard HTTP Server
+    int http_port = my_port + 1000;
+    http_listen_socket = mesh_http_init(http_port);
+    if (http_listen_socket >= 0) {
+        printf(C_GRN "✅ Web Dashboard running at " C_YEL "http://%s:%d\n" C_RST, my_ip, http_port);
+    } else {
+        log_warning("MESH_MAIN", "Failed to start HTTP server");
+    }
 
     // Test mode - run automated test sequence
     if (test_mode) {
@@ -267,6 +279,12 @@ int main(int argc, char *argv[]) {
             FD_SET(discovery_socket, &read_fds);
             if (discovery_socket > max_fd) max_fd = discovery_socket;
         }
+        
+        // Add HTTP socket
+        if (http_listen_socket != -1) {
+            FD_SET(http_listen_socket, &read_fds);
+            if (http_listen_socket > max_fd) max_fd = http_listen_socket;
+        }
 
         // Add all peer sockets
         for (int i = 0; i < peer_manager_get_peer_count(); i++) {
@@ -306,6 +324,16 @@ int main(int argc, char *argv[]) {
         // Check for discovery messages
         if (discovery_socket != -1 && FD_ISSET(discovery_socket, &read_fds)) {
             mesh_main_handle_discovery_message(discovery_socket);
+        }
+        
+        // Check for HTTP dashboard requests
+        if (http_listen_socket != -1 && FD_ISSET(http_listen_socket, &read_fds)) {
+            struct sockaddr_in client_addr;
+            socklen_t client_len = sizeof(client_addr);
+            int http_client = accept(http_listen_socket, (struct sockaddr *)&client_addr, &client_len);
+            if (http_client >= 0) {
+                mesh_http_handle_client(http_client);
+            }
         }
 
         // Check for peer messages
