@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -Wall -Iinclude
 
 # P2P mesh components
-MESH_OBJS = mesh/mesh_main.o mesh/task_queue.o mesh/result_queue.o mesh/process_manager.o mesh/mesh_monitor.o common/peer_manager.o common/logger.o common/network.o
+MESH_OBJS = mesh/mesh_main.o mesh/task_queue.o mesh/result_queue.o mesh/process_manager.o mesh/mesh_monitor.o mesh/mesh_http.o common/peer_manager.o common/logger.o common/network.o
 
 all: mesh_bin demo_bin
 
